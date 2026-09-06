@@ -1,16 +1,17 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <manifest>
   <!--
-    Team repo manifest. Includes the full openvela base project set
-    (openvela.xml in this same repo) and adds this team repo as a self-ref
-    project, exposing its work-form subdirectories to openvela working-tree
-    locations via <linkfile>. remote/default come from the included openvela.xml.
+    Team 103 (BitForge) repo manifest.
+
+    Includes the openvela base project set (openvela.xml) and maps this
+    team's board adaptation directory into the openvela build tree via
+    <linkfile>, following the standard vendor/espressif layout.
   -->
   <include name="openvela.xml"/>
 
   <project path="contest2026_103_BitForge" name="contest2026_103_BitForge">
-    <linkfile src="app/hello_app" dest="packages/demos/contest2026_103_hello_app"/>
-    <linkfile src="quickapp/hello_quickapp" dest="packages/apps/contest2026_103_hello_quickapp"/>
-    <linkfile src="board/contest_board" dest="vendor/openvela/boards/contest2026_103_board"/>
+    <!-- Board adaptation: mapped to the standard vendor espressif path -->
+    <linkfile src="board/esp32p4-function-ev-board"
+              dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board"/>
   </project>
 </manifest>
