@@ -1,30 +1,145 @@
 #!/bin/bash
-# ESP32-P4 Function EV Board build script (openvela port)
+# Build the openvela ESP32-P4-Function-EV-Board firmware.
 #
-# Stage 1 target: minimal NSH with the USB CDC-ACM console.
+# Usage:  ./build_esp32p4.sh [menuconfig|distclean]
+#
+# Produces: <workspace>/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin
+#
+# Prerequisites (auto-installed by this script if missing):
+#   - riscv32-esp-elf toolchain (esp-14.2.0 verified)
+#
+# The script pins the esp-hal-3rdparty fork and commit so the build is
+# reproducible. See docs/adr/ADR-0003.md for the HAL dependency details.
 
-set -e
+set -euo pipefail
 
-# Proxy used by the build system when fetching esp-hal-3rdparty.
-export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=http://127.0.0.1:7890
+#-----------------------------------------------------------------------------
+# Toolchain: check PATH, then common install locations, then auto-install
+#-----------------------------------------------------------------------------
 
-# Toolchain
-export PATH="/home/ekko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20260121/riscv32-esp-elf/bin:$PATH"
+TOOLCHAIN_VERSION="esp-14.2.0_20260121"
+TOOLCHAIN_ROOT="$HOME/.espressif/tools/riscv32-esp-elf/$TOOLCHAIN_VERSION/riscv32-esp-elf"
 
-# esp-hal-3rdparty remote dependency (fork carrying the ESP32-P4 fixes)
+find_toolchain() {
+  # Already in PATH?
+  if command -v riscv32-esp-elf-gcc &>/dev/null; then
+    return 0
+  fi
+  # Common espressif tools install locations
+  for candidate in \
+    "$TOOLCHAIN_ROOT/bin" \
+    "$HOME/.espressif/tools/riscv32-esp-elf"/*/riscv32-esp-elf/bin \
+    /opt/espressif/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin; do
+    if [ -x "$candidate/riscv32-esp-elf-gcc" ]; then
+      export PATH="$candidate:$PATH"
+      return 0
+    fi
+  done
+  return 1
+}
+
+install_toolchain() {
+  echo "=== riscv32-esp-elf toolchain not found, installing ==="
+
+  # Use esp-idf-tools if available (it manages toolchain installs)
+  if [ -x "$HOME/.espressif/python_env"/*/bin/python ] 2>/dev/null || \
+     [ -d "$HOME/.espressif" ]; then
+    echo "Detected existing ~/.espressif — using idf_tools.py to install"
+    local idf_dir="$HOME/.espressif"
+
+    # Find any esp-idf installation to borrow idf_tools.py from
+    local idf_tools=""
+    for candidate in \
+      "$HOME/esp/esp-idf"*/tools/idf_tools.py \
+      "$HOME/esp/esp-idf/tools/idf_tools.py" \
+      "$HOME/esp-idf/tools/idf_tools.py"; do
+      if [ -f "$candidate" ]; then
+        idf_tools="$candidate"
+        break
+      fi
+    done
+
+    if [ -n "$idf_tools" ]; then
+      python3 "$idf_tools" install riscv32-esp-elf
+      python3 "$idf_tools" export --detection-timeout 10 > /dev/null
+    fi
+  fi
+
+  # Re-check after install attempt
+  if command -v riscv32-esp-elf-gcc &>/dev/null; then
+    return 0
+  fi
+
+  # Fall back to scanning for the toolchain we just installed
+  if find_toolchain; then
+    return 0
+  fi
+
+  # Still not found: manual install instructions
+  echo "error: riscv32-esp-elf toolchain installation failed" >&2
+  echo "" >&2
+  echo "Manual install:" >&2
+  echo "  mkdir -p ~/.espressif/tools/riscv32-esp-elf" >&2
+  echo "  # Download from:" >&2
+  echo "  # https://github.com/espressif/crosstool-NG/releases" >&2
+  echo "  # Or use esp-idf:" >&2
+  echo "  #   git clone https://github.com/espressif/esp-idf.git" >&2
+  echo "  #   ./esp-idf/install.sh esp32p4" >&2
+  echo "  #   source ./esp-idf/export.sh" >&2
+  exit 1
+}
+
+# Check and auto-install if needed
+if ! find_toolchain; then
+  install_toolchain
+fi
+
+echo "=== Toolchain: $(riscv32-esp-elf-gcc -dumpversion) ==="
+
+#-----------------------------------------------------------------------------
+# esp-hal-3rdparty remote dependency (pinned fork + commit).
+# If GitHub is unreachable, configure your own proxy via the standard
+# https_proxy / http_proxy environment variables before running.
+#-----------------------------------------------------------------------------
+
 export ESP_HAL_3RDPARTY_URL="https://github.com/cubegao/esp-hal-3rdparty.git"
 export ESP_HAL_3RDPARTY_VERSION="a498192b2c15ad11c048a317c51d04389057bc74"
 
-# Project root
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$PROJECT_ROOT"
+#-----------------------------------------------------------------------------
+# Locate the openvela workspace root
+#-----------------------------------------------------------------------------
 
-# Vendor board configuration (linkfile mapped to
-# contest2026_103_BitForge/board/esp32p4-function-ev-board)
-CONFIG_PATH="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh/"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== Toolchain check ==="
-riscv32-esp-elf-gcc --version | head -1
+find_root() {
+  local d="$1"
+  while [ "$d" != "/" ]; do
+    if [ -x "$d/build.sh" ] && [ -d "$d/nuttx" ]; then
+      echo "$d"
+      return 0
+    fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
 
-echo "=== Building ESP32-P4 (CMake) ==="
-./build.sh "$CONFIG_PATH" --cmake -j$(nproc)
+ROOT="${OPENVELA_ROOT:-$(find_root "$SCRIPT_DIR")}" || {
+  echo "error: openvela workspace root not found — set OPENVELA_ROOT" >&2
+  exit 1
+}
+
+cd "$ROOT"
+
+#-----------------------------------------------------------------------------
+# Board configuration
+#-----------------------------------------------------------------------------
+
+CONFIG_PATH="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh"
+
+echo "=== Building ESP32-P4 (CMake, NSH + display + touch) ==="
+./build.sh "$CONFIG_PATH" --cmake -j$(nproc) "$@"
+
+echo
+echo "=== Build complete ==="
+echo "  Firmware: $ROOT/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin"
+echo "  Flash:    $SCRIPT_DIR/flash_esp32p4.sh [serial-port]"
