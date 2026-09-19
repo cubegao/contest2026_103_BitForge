@@ -48,13 +48,19 @@ docs/                              # 适配文档
 
 ```bash
 # 1. 拉取 openvela 全量工程
-repo init -u https://github.com/open-vela/contest2026_103_BitForge \
+#    -u/-m 指向本队 fork：contest2026_103_BitForge 与 nuttx 均按 manifest
+#    里的 <extend-project> 从 github.com/cubegao 拉取（nuttx 用
+#    feat/openvela-esp32p4 分支，芯片层/板级/驱动改动都在该分支）。
+repo init -u https://github.com/cubegao/contest2026_103_BitForge \
     -b dev-ai-contest-2026 -m contest2026_103_BitForge.xml
 repo sync -c -j8
 
 # 2. 安装 riscv32-esp-elf 工具链（esp-14.2.0）
 #    https://docs.espressif.com/projects/esp-idf/en/latest/esp32p4/get-started/
 ```
+
+> 待 nuttx 改动合入 `open-vela/nuttx` 的 `dev-ai-contest-2026` 后，删掉
+> `contest2026_103_BitForge.xml` 里的 nuttx `<extend-project>` 即可切回上游。
 
 ### 4.2 构建
 

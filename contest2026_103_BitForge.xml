@@ -9,9 +9,29 @@
   -->
   <include name="openvela.xml"/>
 
+  <!--
+    Development fork: pull this team repo and nuttx from github.com/cubegao.
+    The ESP32-P4 chip/board/driver work lives on nuttx branch
+    feat/openvela-esp32p4; everything else keeps coming from open-vela via the
+    relative `openvela` remote in openvela.xml.
+
+    NOTE: repo reads the manifest from the -u repo, so init must point at the
+    fork as well:
+      repo init -u https://github.com/cubegao/contest2026_103_BitForge \
+          -b dev-ai-contest-2026 -m contest2026_103_BitForge.xml
+    Once the nuttx changes are merged into open-vela/nuttx dev-ai-contest-2026,
+    remove the nuttx <extend-project> below to track upstream again.
+  -->
+  <remote name="cubegao" fetch="https://github.com/cubegao/"/>
+
   <project path="contest2026_103_BitForge" name="contest2026_103_BitForge">
     <!-- Board adaptation: mapped to the standard vendor espressif path -->
     <linkfile src="board/esp32p4-function-ev-board"
               dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board"/>
   </project>
+
+  <!-- Overrides must follow the <project> they extend (repo parses in order). -->
+  <extend-project name="contest2026_103_BitForge" remote="cubegao"/>
+  <extend-project name="nuttx" remote="cubegao"
+                  revision="feat/openvela-esp32p4"/>
 </manifest>
