@@ -131,6 +131,46 @@ ROOT="${OPENVELA_ROOT:-$(find_root "$SCRIPT_DIR")}" || {
 cd "$ROOT"
 
 #-----------------------------------------------------------------------------
+# Self-heal an upstream bug in nuttx/tools/build.sh
+#
+# build_board_cmake() computes the defconfig path with:
+#   valid_defconfig_path=$(echo ${defconfig_path} | sed 's/^.\{3\}//')
+# i.e. it blindly strips the first 3 characters, assuming the config path
+# starts with "../". We pass the documented vendor-relative form
+# "vendor/...", so "ven" is chopped off and grep fails with:
+#   grep: dor/espressif/.../defconfig: No such file or directory
+# It is harmless (only the GHS/Tasking toolchain probe is skipped) but noisy.
+# Strip a leading "../" only when present. This is a no-op if the file is
+# already fixed or if upstream changes, and lives here so the fix survives a
+# `repo sync` (nuttx is a separate repo).
+#-----------------------------------------------------------------------------
+
+patch_build_sh() {
+  local f="$ROOT/nuttx/tools/build.sh"
+  [ -f "$f" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+
+  python3 - "$f" <<'PY'
+import sys
+
+path = sys.argv[1]
+buggy = "valid_defconfig_path=$(echo ${defconfig_path} | sed 's/^.\{3\}//')"
+fixed = "valid_defconfig_path=${defconfig_path#../}"
+try:
+    with open(path, encoding="utf-8") as fp:
+        src = fp.read()
+except OSError:
+    sys.exit(0)
+if buggy in src:
+    with open(path, "w", encoding="utf-8") as fp:
+        fp.write(src.replace(buggy, fixed))
+    print("=== fixed nuttx/tools/build.sh: strip leading '../' only ===")
+PY
+}
+
+patch_build_sh
+
+#-----------------------------------------------------------------------------
 # Board configuration
 #-----------------------------------------------------------------------------
 
